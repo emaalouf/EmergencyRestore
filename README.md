@@ -158,6 +158,68 @@ DB_ENCRYPT=true
 DB_TRUST_SERVER_CERTIFICATE=false
 ```
 
+## 🚨 Disaster Recovery Mode
+
+For emergency database migrations between RDS instances:
+
+### Quick Disaster Recovery Setup
+
+1. **Configure disaster recovery environment:**
+   ```bash
+   cp .env.disaster-recovery .env
+   nano .env  # Edit with your RDS credentials
+   ```
+
+2. **Run complete migration:**
+   ```bash
+   npm run disaster-recovery
+   ```
+
+### Disaster Recovery Features
+
+- **RDS-to-RDS Migration**: Migrate data between AWS RDS instances
+- **Automatic Validation**: Validates data integrity during migration
+- **Backup Creation**: Creates backup of target before migration
+- **Progress Monitoring**: Real-time migration progress and statistics
+- **Error Recovery**: Handles network issues and temporary failures
+- **Migration Reports**: Detailed reports of migration success/failures
+
+### Disaster Recovery Configuration
+
+```env
+# Source Database (where data currently exists)
+SOURCE_DB_SERVER=your-source-rds.amazonaws.com
+SOURCE_DB_DATABASE=your_database
+SOURCE_DB_USER=username
+SOURCE_DB_PASSWORD=password
+
+# Target Database (where data needs to be restored)
+TARGET_DB_SERVER=your-target-rds.amazonaws.com
+TARGET_DB_DATABASE=your_database
+TARGET_DB_USER=username
+TARGET_DB_PASSWORD=password
+
+# Migration Settings
+CREATE_BACKUP=true              # Backup target before migration
+VALIDATE_DATA=true              # Validate data after migration
+MAX_ROWS_PER_FILE=50000         # Chunk size for large tables
+```
+
+### Emergency Commands
+
+```bash
+# Start disaster recovery migration
+npm run disaster-recovery
+
+# Memory-optimized for large databases
+node --max-old-space-size=4096 disaster-recovery.js
+
+# Quick migration (minimal validation)
+CREATE_BACKUP=false VALIDATE_DATA=false npm run migrate
+```
+
+📖 **See `DISASTER_RECOVERY_README.md`** for complete disaster recovery guide.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -204,15 +266,19 @@ For databases with millions of rows:
 
 ```
 project-root/
-├── export-db.js          # Main export script
-├── package.json          # Project dependencies
-├── .env                  # Database credentials (create from .env.example)
-├── .env.example          # Environment variables template
-├── exports/              # Export output directory (created automatically)
+├── export-db.js                 # Database export script
+├── import-db.js                 # Database import script
+├── disaster-recovery.js         # Disaster recovery migration script
+├── package.json                 # Project dependencies
+├── .env                         # Database credentials
+├── .env.example                 # Environment variables template
+├── .env.disaster-recovery       # Disaster recovery configuration template
+├── exports/                     # Export output directory (created automatically)
 │   ├── schema.json
 │   ├── data_export_summary.json
 │   └── *_data.json
-└── README.md            # This file
+├── DISASTER_RECOVERY_README.md  # Complete disaster recovery guide
+└── README.md                    # This file
 ```
 
 ## License

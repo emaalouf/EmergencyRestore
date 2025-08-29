@@ -5,6 +5,10 @@
   "main": "export-db.js",
   "scripts": {
     "start": "node export-db.js",
+    "export": "node export-db.js",
+    "import": "node import-db.js",
+    "disaster-recovery": "node disaster-recovery.js",
+    "migrate": "node disaster-recovery.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": ["mssql", "database", "export", "backup"],
