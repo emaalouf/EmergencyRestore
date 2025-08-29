@@ -54,6 +54,8 @@ async function getTableSchema(pool, tableName) {
             COLUMN_NAME,
             DATA_TYPE,
             CHARACTER_MAXIMUM_LENGTH,
+            NUMERIC_PRECISION,
+            NUMERIC_SCALE,
             IS_NULLABLE,
             COLUMN_DEFAULT
         FROM INFORMATION_SCHEMA.COLUMNS 
@@ -69,16 +71,22 @@ async function createTableIfNotExists(targetPool, tableName, schema) {
         const columns = schema.map(col => {
             let columnDef = `[${col.COLUMN_NAME}] ${col.DATA_TYPE}`;
             
-            if (col.CHARACTER_MAXIMUM_LENGTH) {
+            if (col.CHARACTER_MAXIMUM_LENGTH && col.CHARACTER_MAXIMUM_LENGTH > 0) {
                 columnDef += `(${col.CHARACTER_MAXIMUM_LENGTH})`;
+            } else if (col.DATA_TYPE === 'decimal' || col.DATA_TYPE === 'numeric') {
+                if (col.NUMERIC_PRECISION && col.NUMERIC_SCALE !== null) {
+                    columnDef += `(${col.NUMERIC_PRECISION},${col.NUMERIC_SCALE})`;
+                }
+            } else if (col.DATA_TYPE === 'varchar' || col.DATA_TYPE === 'nvarchar') {
+                if (col.CHARACTER_MAXIMUM_LENGTH === -1) {
+                    columnDef += '(MAX)';
+                } else if (!col.CHARACTER_MAXIMUM_LENGTH) {
+                    columnDef += '(255)';
+                }
             }
             
             if (col.IS_NULLABLE === 'NO') {
                 columnDef += ' NOT NULL';
-            }
-            
-            if (col.COLUMN_DEFAULT) {
-                columnDef += ` DEFAULT ${col.COLUMN_DEFAULT}`;
             }
             
             return columnDef;
