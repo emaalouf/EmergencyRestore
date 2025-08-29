@@ -2,48 +2,61 @@ const sql = require('mssql');
 const { sourceConfig, targetConfig } = require('./config');
 const { getTableList, getTableSchema, bulkInsertData } = require('./database');
 const { executeWithRetry, formatProgress, calculateETA } = require('./utils');
-const { verifyTableData, compareTableStructure } = require('./verifier');
+const { verifyTableData } = require('./verifier');
 
-async function fixTableStructure(targetPool, tableName, sourceMissing, targetExtra) {
+async function fixTableStructure(sourcePool, targetPool, tableName) {
     console.log(`🔧 Fixing table structure: ${tableName}`);
     
-    for (const column of sourceMissing) {
-        try {
-            let columnDef = `[${column.COLUMN_NAME}] ${column.DATA_TYPE}`;
-            
-            if (column.CHARACTER_MAXIMUM_LENGTH && column.CHARACTER_MAXIMUM_LENGTH > 0) {
-                columnDef += `(${column.CHARACTER_MAXIMUM_LENGTH})`;
-            } else if (column.DATA_TYPE === 'decimal' || column.DATA_TYPE === 'numeric') {
-                if (column.NUMERIC_PRECISION && column.NUMERIC_SCALE !== null) {
-                    columnDef += `(${column.NUMERIC_PRECISION},${column.NUMERIC_SCALE})`;
-                }
-            } else if (column.DATA_TYPE === 'varchar' || column.DATA_TYPE === 'nvarchar') {
-                if (column.CHARACTER_MAXIMUM_LENGTH === -1) {
-                    columnDef += '(MAX)';
-                } else if (!column.CHARACTER_MAXIMUM_LENGTH) {
-                    columnDef += '(255)';
-                }
-            }
-            
-            if (column.IS_NULLABLE === 'NO') {
-                columnDef += ' NOT NULL';
-            }
-            
-            await targetPool.request().query(`ALTER TABLE [${tableName}] ADD ${columnDef}`);
-            console.log(`   ✅ Added column: ${column.COLUMN_NAME}`);
-        } catch (error) {
-            console.error(`   ❌ Failed to add column ${column.COLUMN_NAME}:`, error.message);
-        }
+    try {
+        const sourceSchema = await getTableSchema(sourcePool, tableName);
+        const targetSchema = await getTableSchema(targetPool, tableName);
+        
+        console.log(`   📋 Recreating table ${tableName} with correct schema...`);
+        
+        await targetPool.request().query(`DROP TABLE IF EXISTS [${tableName}_backup]`);
+        await targetPool.request().query(`SELECT * INTO [${tableName}_backup] FROM [${tableName}]`);
+        console.log(`   💾 Backed up existing data to ${tableName}_backup`);
+        
+        await targetPool.request().query(`DROP TABLE [${tableName}]`);
+        
+        const createTableSQL = generateCreateTableSQL(tableName, sourceSchema);
+        await targetPool.request().query(createTableSQL);
+        console.log(`   🔨 Recreated table with correct structure`);
+        
+        return true;
+        
+    } catch (error) {
+        console.error(`   ❌ Failed to fix table structure for ${tableName}:`, error.message);
+        throw error;
     }
+}
+
+function generateCreateTableSQL(tableName, schema) {
+    const columns = schema.map(col => {
+        let columnDef = `[${col.COLUMN_NAME}] ${col.DATA_TYPE}`;
+        
+        if (col.CHARACTER_MAXIMUM_LENGTH && col.CHARACTER_MAXIMUM_LENGTH > 0) {
+            columnDef += `(${col.CHARACTER_MAXIMUM_LENGTH})`;
+        } else if (col.DATA_TYPE === 'decimal' || col.DATA_TYPE === 'numeric') {
+            if (col.NUMERIC_PRECISION && col.NUMERIC_SCALE !== null) {
+                columnDef += `(${col.NUMERIC_PRECISION},${col.NUMERIC_SCALE})`;
+            }
+        } else if (col.DATA_TYPE === 'varchar' || col.DATA_TYPE === 'nvarchar') {
+            if (col.CHARACTER_MAXIMUM_LENGTH === -1) {
+                columnDef += '(MAX)';
+            } else if (!col.CHARACTER_MAXIMUM_LENGTH) {
+                columnDef += '(255)';
+            }
+        }
+        
+        if (col.IS_NULLABLE === 'NO') {
+            columnDef += ' NOT NULL';
+        }
+        
+        return columnDef;
+    }).join(',\n    ');
     
-    for (const column of targetExtra) {
-        try {
-            await targetPool.request().query(`ALTER TABLE [${tableName}] DROP COLUMN [${column.COLUMN_NAME}]`);
-            console.log(`   ✅ Removed extra column: ${column.COLUMN_NAME}`);
-        } catch (error) {
-            console.error(`   ❌ Failed to remove column ${column.COLUMN_NAME}:`, error.message);
-        }
-    }
+    return `CREATE TABLE [${tableName}] (\n    ${columns}\n)`;
 }
 
 async function retransferTableData(sourcePool, targetPool, tableName) {
@@ -232,8 +245,7 @@ async function fixDatabaseIssues() {
             
             if (hasStructureIssues) {
                 console.log(`   📋 Fixing structure issues...`);
-                const structureDiffs = await compareTableStructure(sourcePool, targetPool, table);
-                console.log(`   ⚠️  Structure differences found, consider manual review`);
+                await fixTableStructure(sourcePool, targetPool, table);
             }
             
             if (hasDataIssues) {

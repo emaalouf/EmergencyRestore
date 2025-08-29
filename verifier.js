@@ -56,8 +56,13 @@ async function compareTableStructure(sourcePool, targetPool, tableName) {
 }
 
 async function compareTableRowCounts(sourcePool, targetPool, tableName) {
-    const sourceCountResult = await sourcePool.request().query(`SELECT COUNT(*) as count FROM [${tableName}]`);
-    const targetCountResult = await targetPool.request().query(`SELECT COUNT(*) as count FROM [${tableName}]`);
+    const sourceRequest = sourcePool.request();
+    const targetRequest = targetPool.request();
+    sourceRequest.timeout = 300000;
+    targetRequest.timeout = 300000;
+    
+    const sourceCountResult = await sourceRequest.query(`SELECT COUNT(*) as count FROM [${tableName}]`);
+    const targetCountResult = await targetRequest.query(`SELECT COUNT(*) as count FROM [${tableName}]`);
     
     const sourceCount = sourceCountResult.recordset[0].count;
     const targetCount = targetCountResult.recordset[0].count;
@@ -91,7 +96,9 @@ async function calculateTableChecksum(pool, tableName, schema) {
         FROM [${tableName}]
     `;
     
-    const result = await pool.request().query(query);
+    const request = pool.request();
+    request.timeout = 300000;
+    const result = await request.query(query);
     return {
         checksum: result.recordset[0].checksum || 0,
         rowCount: result.recordset[0].row_count
