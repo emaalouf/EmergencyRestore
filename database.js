@@ -48,6 +48,14 @@ async function createTableIfNotExists(targetPool, tableName, schema) {
                 } else if (!col.CHARACTER_MAXIMUM_LENGTH) {
                     columnDef += '(255)';
                 }
+            } else if (col.DATA_TYPE === 'varbinary') {
+                if (col.CHARACTER_MAXIMUM_LENGTH === -1) {
+                    columnDef += '(MAX)';
+                } else if (col.CHARACTER_MAXIMUM_LENGTH) {
+                    columnDef += `(${col.CHARACTER_MAXIMUM_LENGTH})`;
+                } else {
+                    columnDef += '(MAX)';
+                }
             }
             
             if (col.IS_NULLABLE === 'NO') {
@@ -170,7 +178,26 @@ async function bulkInsertData(targetPool, table, schema, rows) {
     }
     
     for (const row of rows) {
-        bulkTable.rows.add(...schema.map(col => row[col.COLUMN_NAME]));
+        const values = schema.map(col => {
+            let value = row[col.COLUMN_NAME];
+            
+            if (value === null || value === undefined) {
+                return null;
+            }
+            
+            if (['datetime', 'datetime2', 'smalldatetime'].includes(col.DATA_TYPE.toLowerCase())) {
+                if (typeof value === 'string' && value.includes('T')) {
+                    value = new Date(value);
+                }
+                if (value instanceof Date && isNaN(value.getTime())) {
+                    return null;
+                }
+            }
+            
+            return value;
+        });
+        
+        bulkTable.rows.add(...values);
     }
     
     const request = new sql.Request(targetPool);
