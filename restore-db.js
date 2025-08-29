@@ -97,6 +97,75 @@ async function createTableIfNotExists(targetPool, tableName, schema) {
     }
 }
 
+async function getFunctions(pool) {
+    const result = await pool.request().query(`
+        SELECT 
+            ROUTINE_NAME,
+            ROUTINE_DEFINITION
+        FROM INFORMATION_SCHEMA.ROUTINES 
+        WHERE ROUTINE_TYPE = 'FUNCTION'
+        AND ROUTINE_SCHEMA = 'dbo'
+        ORDER BY ROUTINE_NAME
+    `);
+    return result.recordset;
+}
+
+async function getViews(pool) {
+    const result = await pool.request().query(`
+        SELECT 
+            TABLE_NAME as VIEW_NAME,
+            VIEW_DEFINITION
+        FROM INFORMATION_SCHEMA.VIEWS 
+        WHERE TABLE_SCHEMA = 'dbo'
+        ORDER BY TABLE_NAME
+    `);
+    return result.recordset;
+}
+
+async function transferFunctions(sourcePool, targetPool) {
+    console.log('🔧 Transferring functions...');
+    
+    try {
+        const functions = await getFunctions(sourcePool);
+        
+        for (const func of functions) {
+            try {
+                await targetPool.request().query(`DROP FUNCTION IF EXISTS [${func.ROUTINE_NAME}]`);
+                await targetPool.request().query(func.ROUTINE_DEFINITION);
+                console.log(`✅ Transferred function: ${func.ROUTINE_NAME}`);
+            } catch (error) {
+                console.error(`❌ Error transferring function ${func.ROUTINE_NAME}:`, error.message);
+            }
+        }
+        
+        console.log(`✅ Functions transfer completed (${functions.length} functions)`);
+    } catch (error) {
+        console.error('❌ Error getting functions:', error.message);
+    }
+}
+
+async function transferViews(sourcePool, targetPool) {
+    console.log('👁️ Transferring views...');
+    
+    try {
+        const views = await getViews(sourcePool);
+        
+        for (const view of views) {
+            try {
+                await targetPool.request().query(`DROP VIEW IF EXISTS [${view.VIEW_NAME}]`);
+                await targetPool.request().query(view.VIEW_DEFINITION);
+                console.log(`✅ Transferred view: ${view.VIEW_NAME}`);
+            } catch (error) {
+                console.error(`❌ Error transferring view ${view.VIEW_NAME}:`, error.message);
+            }
+        }
+        
+        console.log(`✅ Views transfer completed (${views.length} views)`);
+    } catch (error) {
+        console.error('❌ Error getting views:', error.message);
+    }
+}
+
 async function clearTargetDatabase(targetPool) {
     console.log('🧹 Clearing target database...');
     
@@ -186,6 +255,10 @@ async function restoreDatabase() {
         await clearTargetDatabase(targetPool);
         
         await transferData(sourcePool, targetPool);
+        
+        await transferFunctions(sourcePool, targetPool);
+        
+        await transferViews(sourcePool, targetPool);
         
         console.log('🎉 Database restore completed successfully!');
         
