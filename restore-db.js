@@ -152,7 +152,7 @@ async function transferData(sourcePool, targetPool) {
                     await request.query(insertQuery);
                     insertedCount++;
                     
-                    if (insertedCount % 100 === 0) {
+                    if (insertedCount % 50000 === 0) {
                         console.log(`   📈 Inserted ${insertedCount}/${sourceData.recordset.length} rows`);
                     }
                 } catch (error) {
