@@ -121,7 +121,7 @@ async function retransferTableData(sourcePool, targetPool, tableName) {
 }
 
 async function transferBatchIndividually(sourcePool, targetPool, tableName, schema, offset, batchSize) {
-    console.log(`   🐌 Transferring ${batchSize} rows individually...`);
+    console.log(`   🐌 Transferring ${batchSize} rows individually using INSERT statements...`);
     
     const sourceData = await sourcePool.request().query(`
         SELECT * FROM [${tableName}]
@@ -130,13 +130,63 @@ async function transferBatchIndividually(sourcePool, targetPool, tableName, sche
         FETCH NEXT ${batchSize} ROWS ONLY
     `);
     
+    let successCount = 0;
+    
     for (const row of sourceData.recordset) {
         try {
-            await bulkInsertData(targetPool, tableName, schema, [row]);
+            const columnNames = Object.keys(row).map(col => `[${col}]`).join(', ');
+            const values = Object.entries(row).map(([key, value]) => {
+                const column = schema.find(c => c.COLUMN_NAME === key);
+                
+                if (value === null || value === undefined) {
+                    return 'NULL';
+                }
+                
+                if (column && ['datetime', 'datetime2', 'smalldatetime'].includes(column.DATA_TYPE.toLowerCase())) {
+                    if (value instanceof Date) {
+                        return `'${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+                    } else if (typeof value === 'string') {
+                        try {
+                            const date = new Date(value);
+                            if (isNaN(date.getTime())) {
+                                return 'NULL';
+                            }
+                            return `'${date.toISOString().slice(0, 19).replace('T', ' ')}'`;
+                        } catch {
+                            return 'NULL';
+                        }
+                    }
+                    return 'NULL';
+                }
+                
+                if (typeof value === 'string') {
+                    return `'${value.replace(/'/g, "''")}'`;
+                }
+                
+                if (typeof value === 'boolean') {
+                    return value ? '1' : '0';
+                }
+                
+                if (Buffer.isBuffer(value)) {
+                    return `0x${value.toString('hex')}`;
+                }
+                
+                return value;
+            }).join(', ');
+            
+            await targetPool.request().query(`
+                INSERT INTO [${tableName}] (${columnNames})
+                VALUES (${values})
+            `);
+            
+            successCount++;
+            
         } catch (error) {
-            console.error(`   ⚠️  Failed to insert individual row, skipping...`);
+            console.error(`   ⚠️  Failed to insert individual row, skipping: ${error.message.substring(0, 100)}`);
         }
     }
+    
+    console.log(`   ✅ Individual transfer: ${successCount}/${sourceData.recordset.length} rows successful`);
 }
 
 async function fixDatabaseIssues() {
