@@ -8,7 +8,8 @@ const sourceConfig = {
     password: process.env.SOURCE_DB_PASSWORD,
     options: {
         encrypt: true,
-        trustServerCertificate: false
+        trustServerCertificate: true,
+        enableArithAbort: true
     },
     pool: {
         min: parseInt(process.env.DB_POOL_MIN) || 0,
@@ -25,7 +26,8 @@ const targetConfig = {
     password: process.env.TARGET_DB_PASSWORD,
     options: {
         encrypt: true,
-        trustServerCertificate: false
+        trustServerCertificate: true,
+        enableArithAbort: true
     },
     pool: {
         min: parseInt(process.env.DB_POOL_MIN) || 0,
