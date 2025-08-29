@@ -160,7 +160,7 @@ class DatabaseImporter {
       return sql;
     }).join(',\n    ');
 
-    let sql = `CREATE TABLE [${table.schema}].[${table.name}] (\n    ${columns}\n)`;
+    let sql = `CREATE TABLE [${table.schema}].[${table.name}] (\n    ${columns}`;
 
     // Add primary key constraint if exists
     if (table.primary_keys && table.primary_keys.length > 0) {
@@ -168,7 +168,7 @@ class DatabaseImporter {
       sql += `,\n    CONSTRAINT [PK_${table.name}] PRIMARY KEY (${pkColumns})`;
     }
 
-    sql += ';';
+    sql += '\n);';
 
     return sql;
   }
