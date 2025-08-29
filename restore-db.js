@@ -48,6 +48,55 @@ async function getTableList(pool) {
     return result.recordset.map(row => row.TABLE_NAME);
 }
 
+async function getTableSchema(pool, tableName) {
+    const result = await pool.request().query(`
+        SELECT 
+            COLUMN_NAME,
+            DATA_TYPE,
+            CHARACTER_MAXIMUM_LENGTH,
+            IS_NULLABLE,
+            COLUMN_DEFAULT
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = '${tableName}'
+        AND TABLE_SCHEMA = 'dbo'
+        ORDER BY ORDINAL_POSITION
+    `);
+    return result.recordset;
+}
+
+async function createTableIfNotExists(targetPool, tableName, schema) {
+    try {
+        const columns = schema.map(col => {
+            let columnDef = `[${col.COLUMN_NAME}] ${col.DATA_TYPE}`;
+            
+            if (col.CHARACTER_MAXIMUM_LENGTH) {
+                columnDef += `(${col.CHARACTER_MAXIMUM_LENGTH})`;
+            }
+            
+            if (col.IS_NULLABLE === 'NO') {
+                columnDef += ' NOT NULL';
+            }
+            
+            if (col.COLUMN_DEFAULT) {
+                columnDef += ` DEFAULT ${col.COLUMN_DEFAULT}`;
+            }
+            
+            return columnDef;
+        }).join(', ');
+        
+        const createTableQuery = `CREATE TABLE [${tableName}] (${columns})`;
+        await targetPool.request().query(createTableQuery);
+        console.log(`✅ Created table: ${tableName}`);
+    } catch (error) {
+        if (error.message.includes('already an object')) {
+            console.log(`ℹ️  Table ${tableName} already exists`);
+        } else {
+            console.error(`❌ Error creating table ${tableName}:`, error.message);
+            throw error;
+        }
+    }
+}
+
 async function clearTargetDatabase(targetPool) {
     console.log('🧹 Clearing target database...');
     
@@ -73,6 +122,9 @@ async function transferData(sourcePool, targetPool) {
     for (const table of tables) {
         try {
             console.log(`🔄 Transferring table: ${table}`);
+            
+            const schema = await getTableSchema(sourcePool, table);
+            await createTableIfNotExists(targetPool, table, schema);
             
             const sourceData = await sourcePool.request().query(`SELECT * FROM [${table}]`);
             
