@@ -191,60 +191,106 @@ async function clearTargetDatabase(targetPool) {
     console.log('✅ Target database cleared successfully');
 }
 
+async function bulkInsertData(targetPool, table, columns, rows) {
+    const bulkTable = new sql.Table(table);
+    
+    for (const column of columns) {
+        bulkTable.columns.add(column, sql.NVarChar(sql.MAX));
+    }
+    
+    for (const row of rows) {
+        bulkTable.rows.add(...columns.map(col => row[col]));
+    }
+    
+    const request = new sql.Request(targetPool);
+    await request.bulk(bulkTable);
+}
+
 async function transferData(sourcePool, targetPool) {
     console.log('📊 Starting data transfer...');
     
     const tables = await getTableList(sourcePool);
+    const totalTables = tables.length;
+    let completedTables = 0;
+    const overallStartTime = Date.now();
     
     for (const table of tables) {
+        const tableStartTime = Date.now();
+        
         try {
-            console.log(`🔄 Transferring table: ${table}`);
+            console.log(`🔄 [${completedTables + 1}/${totalTables}] Transferring table: ${table}`);
             
             const schema = await getTableSchema(sourcePool, table);
             await createTableIfNotExists(targetPool, table, schema);
             
-            const sourceData = await sourcePool.request().query(`SELECT * FROM [${table}]`);
+            const countResult = await sourcePool.request().query(`SELECT COUNT(*) as total FROM [${table}]`);
+            const totalRows = countResult.recordset[0].total;
             
-            if (sourceData.recordset.length === 0) {
-                console.log(`ℹ️  Table ${table} is empty, skipping...`);
+            if (totalRows === 0) {
+                console.log(`ℹ️  Table ${table} is empty (0 rows), skipping...`);
+                completedTables++;
                 continue;
             }
             
-            const columns = Object.keys(sourceData.recordset[0]);
-            const columnList = columns.map(col => `[${col}]`).join(', ');
-            const valuesList = columns.map(col => `@${col}`).join(', ');
+            console.log(`📊 Table ${table}: ${totalRows.toLocaleString()} rows to transfer`);
             
-            const insertQuery = `INSERT INTO [${table}] (${columnList}) VALUES (${valuesList})`;
-            
+            const BATCH_SIZE = 10000;
+            let offset = 0;
             let insertedCount = 0;
             
-            for (const row of sourceData.recordset) {
-                try {
-                    const request = targetPool.request();
+            while (offset < totalRows) {
+                const batchStartTime = Date.now();
+                
+                const sourceData = await sourcePool.request().query(`
+                    SELECT * FROM [${table}]
+                    ORDER BY (SELECT NULL)
+                    OFFSET ${offset} ROWS
+                    FETCH NEXT ${BATCH_SIZE} ROWS ONLY
+                `);
+                
+                if (sourceData.recordset.length > 0) {
+                    const columns = Object.keys(sourceData.recordset[0]);
                     
-                    for (const column of columns) {
-                        request.input(column, row[column]);
+                    try {
+                        await bulkInsertData(targetPool, table, columns, sourceData.recordset);
+                        insertedCount += sourceData.recordset.length;
+                        
+                        const batchTime = (Date.now() - batchStartTime) / 1000;
+                        const progress = (insertedCount / totalRows) * 100;
+                        const remainingRows = totalRows - insertedCount;
+                        const avgRowsPerSecond = insertedCount / ((Date.now() - tableStartTime) / 1000);
+                        const estimatedSecondsLeft = remainingRows / avgRowsPerSecond;
+                        const estimatedMinutesLeft = Math.ceil(estimatedSecondsLeft / 60);
+                        
+                        console.log(`   🚀 ${insertedCount.toLocaleString()}/${totalRows.toLocaleString()} rows (${progress.toFixed(1)}%) | Speed: ${Math.round(avgRowsPerSecond).toLocaleString()} rows/sec | ETA: ${estimatedMinutesLeft}min`);
+                    } catch (error) {
+                        console.error(`❌ Error bulk inserting batch for table ${table}:`, error.message);
+                        break;
                     }
-                    
-                    await request.query(insertQuery);
-                    insertedCount++;
-                    
-                    if (insertedCount % 50000 === 0) {
-                        console.log(`   📈 Inserted ${insertedCount}/${sourceData.recordset.length} rows`);
-                    }
-                } catch (error) {
-                    console.error(`❌ Error inserting row in table ${table}:`, error.message);
                 }
+                
+                offset += BATCH_SIZE;
             }
             
-            console.log(`✅ Transferred ${insertedCount}/${sourceData.recordset.length} rows for table: ${table}`);
+            const tableTime = (Date.now() - tableStartTime) / 1000;
+            console.log(`✅ Table ${table}: ${insertedCount.toLocaleString()}/${totalRows.toLocaleString()} rows transferred in ${tableTime.toFixed(1)}s`);
             
         } catch (error) {
             console.error(`❌ Error transferring table ${table}:`, error.message);
         }
+        
+        completedTables++;
+        const overallProgress = (completedTables / totalTables) * 100;
+        const overallTime = (Date.now() - overallStartTime) / 1000;
+        const avgTablesPerMinute = completedTables / (overallTime / 60);
+        const remainingTables = totalTables - completedTables;
+        const estimatedOverallMinutes = Math.ceil(remainingTables / avgTablesPerMinute);
+        
+        console.log(`📈 Overall Progress: ${completedTables}/${totalTables} tables (${overallProgress.toFixed(1)}%) | ETA: ${estimatedOverallMinutes}min\n`);
     }
     
-    console.log('✅ Data transfer completed');
+    const totalTime = (Date.now() - overallStartTime) / 1000;
+    console.log(`✅ Data transfer completed in ${(totalTime / 60).toFixed(1)} minutes`);
 }
 
 async function restoreDatabase() {
