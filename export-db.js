@@ -209,7 +209,7 @@ class DatabaseExporter {
       }
 
       // Export data in batches to handle large tables
-      const batchSize = 10000;
+      const batchSize = 1000000;
       let allData = [];
       let offset = 0;
 
