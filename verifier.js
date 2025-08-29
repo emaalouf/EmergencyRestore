@@ -86,7 +86,7 @@ async function calculateTableChecksum(pool, tableName, schema) {
     
     const query = `
         SELECT 
-            COUNT(*) as rowCount,
+            COUNT(*) as row_count,
             CHECKSUM_AGG(CHECKSUM(${columnList})) as checksum
         FROM [${tableName}]
     `;
@@ -94,7 +94,7 @@ async function calculateTableChecksum(pool, tableName, schema) {
     const result = await pool.request().query(query);
     return {
         checksum: result.recordset[0].checksum || 0,
-        rowCount: result.recordset[0].rowCount
+        rowCount: result.recordset[0].row_count
     };
 }
 
