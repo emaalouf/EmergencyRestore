@@ -1,12 +1,17 @@
 {
   "name": "emergencyrestore",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "MSSQL Database Export Tool",
+  "main": "export-db.js",
   "scripts": {
+    "start": "node export-db.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": ["mssql", "database", "export", "backup"],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "mssql": "^10.0.1",
+    "dotenv": "^16.3.1"
+  }
 }
