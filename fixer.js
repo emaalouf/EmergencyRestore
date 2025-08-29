@@ -100,10 +100,11 @@ async function retransferTableData(sourcePool, targetPool, tableName) {
             } catch (error) {
                 console.error(`   ❌ Error transferring batch at offset ${offset}:`, error.message);
                 
-                if (error.message.includes('OLE DB') || error.message.includes('invalid data')) {
+                if (error.message.includes('OLE DB') || error.message.includes('invalid data') || error.message.includes('Invalid column type')) {
                     console.log(`   🔧 Trying individual row insertion for problematic batch...`);
-                    await transferBatchIndividually(sourcePool, targetPool, tableName, schema, offset, Math.min(BATCH_SIZE, totalRows - offset));
-                    insertedCount += Math.min(BATCH_SIZE, totalRows - offset);
+                    const actualBatchSize = Math.min(BATCH_SIZE, totalRows - offset);
+                    const successCount = await transferBatchIndividually(sourcePool, targetPool, tableName, schema, offset, actualBatchSize);
+                    insertedCount += successCount;
                     offset += BATCH_SIZE;
                 } else {
                     throw error;
@@ -187,6 +188,7 @@ async function transferBatchIndividually(sourcePool, targetPool, tableName, sche
     }
     
     console.log(`   ✅ Individual transfer: ${successCount}/${sourceData.recordset.length} rows successful`);
+    return successCount;
 }
 
 async function fixDatabaseIssues() {
